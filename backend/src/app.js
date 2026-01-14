@@ -18,11 +18,51 @@ dotenv.config();
 const app = express();
 
 // --- CORS ---
-
+// Prefer environment variable, otherwise fall back to these known origins
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  : [
+      "http://localhost:5173",
+      "https://ipvc-notes-vf-cw4t.vercel.app",
+    ];
 
 app.use(
   cors({
-    origin: ["https://ipvc-notes-vf-cw4t.vercel.app/", "http://localhost:5173/"],
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
+// Explicit CORS middleware (ensures proper preflight handling)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const isAllowed =
+    allowedOrigins === true ||
+    (Array.isArray(allowedOrigins) && allowedOrigins.includes(origin));
+
+  if (isAllowed) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type,Authorization"
+    );
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.status(isAllowed ? 204 : 403).end();
+  }
+
+  next();
+});
+
+// Keep `cors` package as fallback for edge cases
+app.use(
+  cors({
+    origin: allowedOrigins,
     credentials: true,
   })
 );
