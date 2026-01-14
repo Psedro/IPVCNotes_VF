@@ -17,56 +17,36 @@ dotenv.config();
 
 const app = express();
 
-// --- CORS ---
-// Prefer environment variable, otherwise fall back to these known origins
+// ---------- CORS (robusto para Vercel + credentials) ----------
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
   : [
       "http://localhost:5173",
       "https://ipvc-notes-vf-cw4t.vercel.app",
+      // se tiveres um domínio "final" diferente, mete aqui também
+      // "https://ipvc-notes-vf.vercel.app" (isto é backend, normalmente não precisa)
     ];
 
-app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-  })
-);
-// Explicit CORS middleware (ensures proper preflight handling)
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const isAllowed =
-    allowedOrigins === true ||
-    (Array.isArray(allowedOrigins) && allowedOrigins.includes(origin));
+const corsOptions = {
+  origin(origin, cb) {
+    // requests sem Origin (curl/postman/server-to-server)
+    if (!origin) return cb(null, true);
 
-  if (isAllowed) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-    );
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type,Authorization"
-    );
-  }
+    if (allowedOrigins.includes(origin)) return cb(null, true);
 
-  if (req.method === "OPTIONS") {
-    return res.status(isAllowed ? 204 : 403).end();
-  }
+    return cb(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204
+};
 
-  next();
-});
+// Preflight sempre OK (antes das rotas)
+app.options("*", cors(corsOptions));
+app.use(cors(corsOptions));
 
-// Keep `cors` package as fallback for edge cases
-app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-  })
-);
-
+// -------------------------------------------------------------
 app.use(express.json());
 
 // --- Static uploads (local vs Vercel) ---
@@ -74,19 +54,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 if (process.env.VERCEL) {
-  // ✅ Vercel: only writable place is /tmp
   app.use("/uploads", express.static("/tmp/uploads"));
 } else {
-  // ✅ Local: serve ../uploads (one level above src)
   app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 }
 
 // ---- Mongo com cache (serverless safe) ----
 let cached = global.mongoose;
-
-if (!cached) {
-  cached = global.mongoose = { conn: null, promise: null };
-}
+if (!cached) cached = global.mongoose = { conn: null, promise: null };
 
 async function connectMongo() {
   if (cached.conn) return cached.conn;
@@ -115,12 +90,18 @@ app.use("/api/partpastas", partpastasRoutes);
 app.use("/api/edit-requests", editRequestRoutes);
 app.use("/api/upload", uploadRoutes);
 
-// --- Error fallback (optional) ---
-app.use((req, res) => res.status(404).json({ message: "Not Found", path: req.path }));
+// --- Error fallback ---
+app.use((req, res) =>
+  res.status(404).json({ message: "Not Found", path: req.path })
+);
 
 // ---- Handler Vercel ----
 export default async function handler(req, res) {
-  await connectMongo();
-  return app(req, res);
+  try {
+    await connectMongo();
+    return app(req, res);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
 }
-
