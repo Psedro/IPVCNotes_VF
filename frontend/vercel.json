@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://ipvc-notes-vf-yu7s.vercel.app/api/$1"
+    }
+  ]
+}
