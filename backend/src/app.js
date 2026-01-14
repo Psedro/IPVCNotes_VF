@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import authRoutes from "./routes/auth.js";
 import pastaRoutes from "./routes/pasta.js";
@@ -15,16 +17,31 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
+// --- CORS ---
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  : true;
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
-app.use("/api/auth", authRoutes);
-app.use("/api/pastas", pastaRoutes);
-app.use("/api/notas", notaRoutes);
-app.use("/api/permissoes", permRoutes);
-app.use("/api/partpastas", partpastasRoutes);
-app.use("/api/edit-requests", editRequestRoutes);
-app.use("/api/upload", uploadRoutes);
+// --- Static uploads (local vs Vercel) ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+if (process.env.VERCEL) {
+  // ✅ Vercel: only writable place is /tmp
+  app.use("/uploads", express.static("/tmp/uploads"));
+} else {
+  // ✅ Local: serve ../uploads (one level above src)
+  app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+}
 
 // ---- Mongo com cache (serverless safe) ----
 let cached = global.mongoose;
@@ -37,21 +54,31 @@ async function connectMongo() {
   if (cached.conn) return cached.conn;
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(process.env.MONGODB_URI).then(m => m);
+    cached.promise = mongoose
+      .connect(process.env.MONGODB_URI, { bufferCommands: false })
+      .then((m) => m);
   }
 
   cached.conn = await cached.promise;
   return cached.conn;
 }
 
-app.get("/", (_req, res) => {
-  res.status(200).send("OK");
-});
+// --- Basic routes ---
+app.get("/", (_req, res) => res.status(200).send("API online ✅"));
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/favicon.ico", (_req, res) => res.status(204).end());
 
-app.get("/favicon.ico", (_req, res) => {
-  res.status(204).end();
-});
+// --- API routes ---
+app.use("/api/auth", authRoutes);
+app.use("/api/pastas", pastaRoutes);
+app.use("/api/notas", notaRoutes);
+app.use("/api/permissoes", permRoutes);
+app.use("/api/partpastas", partpastasRoutes);
+app.use("/api/edit-requests", editRequestRoutes);
+app.use("/api/upload", uploadRoutes);
 
+// --- Error fallback (optional) ---
+app.use((req, res) => res.status(404).json({ message: "Not Found", path: req.path }));
 
 // ---- Handler Vercel ----
 export default async function handler(req, res) {
