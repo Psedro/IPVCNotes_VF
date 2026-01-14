@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "ipvc-notes-vf.vercel.app/api/$1"
+      "destination": "https://ipvc-notes-vf.vercel.app/api/$1"
     }
   ]
 }
