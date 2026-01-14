@@ -44,6 +44,15 @@ async function connectMongo() {
   return cached.conn;
 }
 
+app.get("/", (_req, res) => {
+  res.status(200).send("OK");
+});
+
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
+});
+
+
 // ---- Handler Vercel ----
 export default async function handler(req, res) {
   await connectMongo();
